@@ -1,0 +1,21 @@
+{
+  "name": "mcla-modtool",
+  "version": "2.0.0",
+  "description": "MCLA ModTool 2 - Midnight Club: Los Angeles save customization editor",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.mclamodtool.app",
+    "productName": "MCLA ModTool 2",
+    "files": ["main.js", "index.html"],
+    "win": { "target": "portable", "artifactName": "MCLA_ModTool_2.exe" }
+  }
+}
