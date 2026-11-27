@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MCLA ModTool 2</title>
+<style>
+:root{--bg:#f4f4f6;--card:#fff;--tx:#18181b;--mu:#6b6b76;--ac:#d4380d;--bd:#d9d9e0;--ok:#1a7f37;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121214;--card:#1c1c20;--tx:#ececf0;--mu:#9a9aa6;--bd:#33333a;--ac:#ff7a45;--ok:#4ac26b}}
+:root[data-theme="dark"]{--bg:#121214;--card:#1c1c20;--tx:#ececf0;--mu:#9a9aa6;--bd:#33333a;--ac:#ff7a45;--ok:#4ac26b;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:820px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:6px 0 2px}h2{font-size:15px;margin:0 0 8px}
+.mu{color:var(--mu);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:10px 0}
+button,select,input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:7px 9px}
+button{cursor:pointer;background:var(--ac);color:#fff;border:0;font-weight:600}
+button.g{background:var(--bg);color:var(--tx);border:1px solid var(--bd)}
+input[type=number]{width:84px}input[type=color]{padding:0;width:40px;height:32px}input.h{width:96px;font-family:monospace}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap}
+.w{color:#b54708;font-size:13px}.ok{color:var(--ok);font-size:13px}
+</style></head><body><main>
+<h1>MCLA ModTool 2</h1>
+<div class="mu">Customization editor for Midnight Club: Los Angeles saves. It runs in your browser and nothing is uploaded.</div>
+
+<div class="card"><h2>1 · Open your save</h2>
+<input type="file" id="f">
+<div class="mu" style="margin-top:6px"><b>PS3:</b> decrypt the save with the DECRYPT.bat kit first, then open the decrypted <b>RAGE.SAV</b> here. <b>Xbox 360:</b> open the <b>mc4.sav</b> package directly.</div>
+<div id="st" class="mu"></div></div>
+
+<div id="ed" hidden>
+<div class="card"><h2>2 · Car</h2><div class="row"><select id="car"></select><button class="g" id="rv">Revert this car to how it loaded</button></div></div>
+
+<div class="card"><h2>3 · Wheels &amp; tires</h2>
+<div class="sc"><table id="wt"></table></div>
+<div class="row"><span>Big rim helper:</span><input type="number" id="bv" min="1" max="127" value="40"><button class="g" id="big">Set rim size</button>
+<button class="g" id="thin">Thin tires (width 0, profile 0)</button><button class="g" id="inv">Invisible tires</button><button class="g" id="ftt">Tire type: Thin (FC)</button></div>
+<div class="mu">Rim size is a signed byte: 1–127 are large (the community used 92), and 128–255 read as negative, which makes tiny wheels. Thin tires set the width and sidewall to 0 so the tire stops growing with the rim. Stock range is 14–28.</div>
+<div class="w">Untested in game by me. Very large rims have frozen the vinyl shop in other people’s saves. Keep a backup and test in free roam first.</div></div>
+
+<div class="card"><h2>4 · Lights</h2>
+<div class="mu">Each car has 19 light entries. <b>A</b> is the bulb or front colour and <b>B</b> is the cover or rear colour. Stock headlights are entries with brightness 4.0. The mode number is the light’s role: 0 and 1 are the headlights, and the rest cover brake, reverse, police and so on. Values from the codebooks: FFFFFFFD is bright flashing, FFFFFFFF flashing, FFFFFFFE faster flashing, FFFFFFF3 no light.</div>
+<div class="row"><span>Low beam brightness (modes 0 and 1):</span><input type="number" id="lb" step="0.5" min="0" value="4"><button class="g" id="alb">Apply</button></div>
+<div class="row"><span>High beam brightness (mode 2, best guess):</span><input type="number" id="hb" step="0.5" min="0" value="8"><button class="g" id="ahb">Apply</button></div>
+<div class="row"><button class="g" id="rb">Rainbow flashing preset (from codebook)</button><button class="g" id="allfd">All lights to “bright flashing”</button></div>
+<div class="w">Brightness above about 50 is extreme. Community saves went far higher, with a glow that reaches across the map, and it can glitch rendering. If you find which mode makes a headlight stay in high-beam state, tell me and I’ll add a one-click button.</div>
+<div class="sc"><table id="lt"></table></div></div>
+
+<div class="card"><h2>5 · Experiments from the codebooks</h2>
+<div class="row"><button class="g" id="spin">Spinner guess (rim model 0 + FF)</button><button class="g" id="orb">Orbiting tires (9F wheel mod)</button></div>
+<div class="mu">Both are community notes, not confirmed features. The orbit mod was reported only for the Impala with 28" rims.</div></div>
+
+<div class="card"><h2>6 · Save</h2>
+<div class="row"><button id="dl">Download modified save</button></div>
+<div id="note" class="mu"></div></div>
+</div>
+
+<script>
+const R=8176,B=26452,DIM=2141,LT=595,NL=19;
+let buf=null,payload=null,orig=null,stfs=null,fname="save";
+const $=id=>document.getElementById(id);
+const dv=()=>new DataView(payload.buffer);
+const RAINBOW="3F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003E1090913D8080813F58D8DA7F8000013E1090913D8080813F0080817F800001FFFFFFFD0000000000FFFFFF000000003F1898993F74F4F63D40C0C27F8000013F1696973F75F5F73D40C0C27F800001FFFFFFFD0000000000FFFFFF000000003F6CECEE3F4CCCCE3E60E0E27F8000013F6BEBED3F4BCBCD3E0080817F800001FFFFFFFD0000000000FFFFFF000000003DE0E0E23D8080813F58D8DA7F8000013DD0D0D23D70F0F23F0080817F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003F1898993F74F4F63D40C0C27F8000013F1696973F75F5F73D40C0C27F800001FFFFFFFD0000000000FFFFFF000000003F6CECEE3F4CCCCE3E60E0E27F8000013F6BEBED3F4BCBCD3E0080817F800001FFFFFFFD0000000000FFFFFF000000003DE0E0E23D8080813F58D8DA7F8000013DD0D0D23D70F0F23F0080817F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003E1090913D8080813F58D8DA7F8000013E1090913D8080813F0080817F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003F1898993F74F4F63D40C0C27F8000013F1696973F75F5F73D40C0C27F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003F1898993F74F4F63D40C0C27F8000013F1696973F75F5F73D40C0C27F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF000000003E1090913D8080813F58D8DA7F8000013E1090913D8080813F0080817F800001FFFFFFFD0000000000FFFFFF000000003DE0E0E23D8080813F58D8DA7F8000013DD0D0D23D70F0F23F0080817F800001FFFFFFFD0000000000FFFFFF000000003F3CBCBD3DE0E0E23D40C0C27F8000013F3CBCBD3DE0E0E23D0080817F800001FFFFFFFD0000000000FFFFFF";
+const TT={0:"Stock",1:"Radial T/A",2:"Red Line",3:"White Outline",4:"White Letters",5:"White w/ Red Line",6:"Yellow Letters",7:"Pzero",8:"Pzero Corsa",9:"Pzero Nero",0x0B:"Whitewalls",0x0C:"Checker tires",0x0D:"Bike tires 1",0x0F:"Bike tires 2",0x10:"White tires",0x13:"Invisible (looks hovering)",0x2C:"Invisible rims",0x69:"Invisible tires",0x83:"Ballbearings",0x98:"White tires 2",0xEA:"Invisible tires 2",0xFC:"Thin tires",0xFF:"No rims"};
+function blk(base,n){return base+0x1000*(n+2*(Math.floor(n/0xAA)+1))}
+function parseSTFS(a){
+  const v=new DataView(a.buffer),hs=v.getUint32(0x340),base=(hs+0xFFF)&0xFFFFF000,e=blk(base,0);
+  const size=v.getUint32(e+0x34),nb=a[e+0x29]|a[e+0x2a]<<8|a[e+0x2b]<<16,st=a[e+0x2f]|a[e+0x30]<<8|a[e+0x31]<<16;
+  if(!(a[e+0x28]&0x40))throw"Non-consecutive file layout is not supported.";
+  const out=new Uint8Array(size);
+  for(let i=0;i<nb;i++){const o=blk(base,st+i),n=Math.min(4096,size-i*4096);if(n>0)out.set(a.subarray(o,o+n),i*4096)}
+  return{base,st,nb,size,out}}
+$("f").onchange=async e=>{
+  const fl=e.target.files[0];if(!fl)return;fname=fl.name;
+  buf=new Uint8Array(await fl.arrayBuffer());stfs=null;
+  try{
+    const m=String.fromCharCode(...buf.slice(0,4));
+    if(m==="CON "||m==="LIVE"||m==="PIRS"){stfs=parseSTFS(buf);payload=stfs.out}else payload=new Uint8Array(buf);
+    if(payload.length<B+R)throw"This does not look like decrypted MCLA save data. PS3 saves must be decrypted first.";
+    orig=new Uint8Array(payload);init()
+  }catch(x){$("st").textContent="Could not read: "+x;$("st").className="w";$("ed").hidden=true}};
+function carName(i){let s="";for(let k=0;k<40;k++){const c=payload[B+R*i+k];if(!c||c===0xCD)break;s+=String.fromCharCode(c)}return s}
+function init(){
+  const sel=$("car");sel.innerHTML="";let n=0;
+  for(let i=0;i<30;i++){if(B+R*(i+1)>payload.length)break;const nm=carName(i);if(nm.length>1&&/^[ -~]+$/.test(nm)){const o=document.createElement("option");o.value=i;o.textContent=i+" · "+nm;sel.appendChild(o);n++}}
+  if(!n){$("st").textContent="No cars found. The file is probably still encrypted.";$("st").className="w";$("ed").hidden=true;return}
+  $("st").textContent=n+" cars found in "+fname+(stfs?" (Xbox package)":" (raw)");$("st").className="ok";
+  $("note").textContent=stfs?"Xbox: after downloading, open the package in Modio and use Rehash and Resign before copying it to your console.":"PS3: copy the downloaded file over RAGE.SAV in your save folder, then run ENCRYPT.bat on that folder before putting it back on the console.";
+  $("ed").hidden=false;draw()}
+$("car").onchange=draw;
+$("rv").onclick=()=>{const b=base();payload.set(orig.subarray(b,b+R),b);draw()};
+const base=()=>B+R*(+$("car").value);
+const WL=[["Ride height",0],["Tire width",2],["Rim size",4],["Tire profile",6]];
+const s8=v=>v>127?v-256:v;
+function draw(){
+  const o=base()+DIM;let h="<tr><th></th><th>Front</th><th>Rear</th><th></th></tr>";
+  for(const[l,p]of WL)h+=`<tr><td>${l}</td>`+[0,1].map(a=>`<td><input type=number min=0 max=255 data-o="${o+p+a}" value="${payload[o+p+a]}"></td>`).join("")+`<td class=mu data-s="${o+p}">${p==4?"= "+s8(payload[o+p])+"\" (signed)":""}</td></tr>`;
+  const tt=payload[o+11],rt=payload[o+10];
+  h+=`<tr><td>Tire type</td><td colspan=2><select id="tts">${Object.entries(TT).map(([k,v])=>`<option value="${k}"${+k===tt?" selected":""}>${v} (${(+k).toString(16).toUpperCase().padStart(2,"0")})</option>`).join("")}</select> <input type=number id="ttn" min=0 max=255 value="${tt}"></td><td></td></tr>`;
+  h+=`<tr><td>Rim type</td><td colspan=2><input type=number id="rtn" min=0 max=255 value="${rt}"></td><td></td></tr>`;
+  $("wt").innerHTML=h;
+  document.querySelectorAll("#wt input[data-o]").forEach(i=>i.oninput=()=>{payload[+i.dataset.o]=Math.max(0,Math.min(255,+i.value||0));const c=document.querySelector(`[data-s="${o+4}"]`);if(c)c.textContent="= "+s8(payload[o+4])+"\" (signed)"});
+  $("tts").onchange=()=>{payload[o+11]=+$("tts").value;$("ttn").value=payload[o+11]};
+  $("ttn").oninput=()=>{payload[o+11]=Math.max(0,Math.min(255,+$("ttn").value||0))};
+  $("rtn").oninput=()=>{payload[o+10]=Math.max(0,Math.min(255,+$("rtn").value||0))};
+  lights()}
+$("big").onclick=()=>{const o=base()+DIM+4,v=Math.max(1,Math.min(127,+$("bv").value||1));payload[o]=v;payload[o+1]=v;draw()};
+$("thin").onclick=()=>{const o=base()+DIM;payload[o+2]=payload[o+3]=0;payload[o+6]=payload[o+7]=0;draw()};
+$("ftt").onclick=()=>{payload[base()+DIM+11]=0xFC;draw()};
+$("inv").onclick=()=>{payload[base()+DIM+11]=0x69;draw()};
+const eo=k=>base()+LT+48*k;
+function rgb(a){const v=dv();return[v.getFloat32(a),v.getFloat32(a+4),v.getFloat32(a+8)]}
+function colorCell(a){
+  const f=rgb(a),ok=f.every(isFinite),m=ok?Math.max(...f):0,hex="#"+f.map(x=>ok&&m>0?Math.round(255*Math.max(0,x)/m).toString(16).padStart(2,"0"):"80").join("");
+  return`<td><input type=color data-a="${a}" value="${hex}"> <input type=number step=any min=0 data-a="${a}" value="${ok&&m<1e6?+m.toFixed(3):0}" title="brightness"></td>`}
+function lights(){
+  let h="<tr><th>#</th><th>Mode (hex)</th><th>A · bulb/front</th><th>B · cover/rear</th></tr>";
+  for(let k=0;k<NL;k++){const e=eo(k);if(e+48>payload.length)break;
+    h+=`<tr><td>${k}</td><td><input class=h data-m="${e+32}" value="${dv().getUint32(e+32).toString(16).toUpperCase().padStart(8,"0")}"></td>${colorCell(e)}${colorCell(e+16)}</tr>`}
+  $("lt").innerHTML=h;
+  document.querySelectorAll("#lt input[data-m]").forEach(i=>i.oninput=()=>{if(/^[0-9a-fA-F]{1,8}$/.test(i.value))dv().setUint32(+i.dataset.m,parseInt(i.value,16)>>>0)});
+  document.querySelectorAll("#lt td").forEach(td=>{const cp=td.querySelector("input[type=color]"),nb=td.querySelector("input[type=number]");if(!cp)return;
+    const w=()=>{const a=+cp.dataset.a,c=[1,3,5].map(i=>parseInt(cp.value.substr(i,2),16)),mx=Math.max(...c,1),br=Math.max(0,+nb.value||0);c.forEach((x,i)=>dv().setFloat32(a+4*i,x/mx*br))};
+    cp.oninput=w;nb.oninput=w})}
+function setBright(a,br){const f=rgb(a),m=Math.max(...f);const v=dv();if(!(m>0&&isFinite(m))){f[0]=f[1]=f[2]=1;}const mm=Math.max(...f);f.forEach((x,i)=>v.setFloat32(a+4*i,x/mm*br))}
+function byMode(ms,br){for(let k=0;k<NL;k++){const e=eo(k);if(ms.includes(dv().getUint32(e+32)))setBright(e,br)}lights()}
+$("alb").onclick=()=>byMode([0,1],Math.max(0,+$("lb").value||0));
+$("ahb").onclick=()=>byMode([2],Math.max(0,+$("hb").value||0));
+$("rb").onclick=()=>{const b=RAINBOW.match(/../g).map(x=>parseInt(x,16));payload.set(b,base()+LT);lights()};
+$("allfd").onclick=()=>{for(let k=0;k<NL;k++)dv().setUint32(eo(k)+32,0xFFFFFFFD);lights()};
+$("spin").onclick=()=>{const b=base();payload[b+94]=0x00;payload[b+95]=0xFF;payload[b+96]=0xFF;alert("Applied the codebook spinner guess. Download it and test in game.")};
+$("orb").onclick=()=>{const b=base();for(let i=0;i<13;i++)payload[b+63+i]=0x9F;alert("Applied. Download it and test in game.")};
+$("dl").onclick=()=>{let out;
+  if(stfs){out=new Uint8Array(buf);for(let i=0;i<stfs.nb;i++){const n=Math.min(4096,stfs.size-i*4096);if(n>0)out.set(payload.subarray(i*4096,i*4096+n),blk(stfs.base,stfs.st+i))}}
+  else out=payload;
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([out]));a.download=fname.replace(/(\.[^.]*)?$/,"_modded$1");a.click()};
+</script></main></body></html>
