@@ -35,13 +35,25 @@ function getPfd() {
   return dir;
 }
 
-function run(pfd, flag, target) {
+function run(pfd, args) {
   return new Promise(resolve => {
-    execFile(path.join(pfd, 'pfdtool.exe'), [flag, target],
+    execFile(path.join(pfd, 'pfdtool.exe'), args,
       { cwd: pfd, windowsHide: true, timeout: 180000 },
       (err, stdout, stderr) => resolve({ err, out: (stdout || '') + (stderr || '') + (err ? '\n' + err.message : '') }));
   });
 }
+
+// Game code (e.g. BLUS30190) from PARAM.SFO, else from the folder name.
+function gameId(dir) {
+  try {
+    const s = fs.readFileSync(path.join(dir, 'PARAM.SFO')).toString('latin1');
+    const m = s.match(/(?:BL|BC|NP)[A-Z]{2}\d{5}/);
+    if (m) return m[0];
+  } catch (_) {}
+  const m2 = path.basename(dir).match(/^[A-Z]{4}\d{5}/);
+  return m2 ? m2[0] : 'BLUS30190';
+}
+const fails = t => (t.match(/FAIL/g) || []).length;
 
 function copyDir(a, b) {
   fs.mkdirSync(b, { recursive: true });
@@ -56,11 +68,11 @@ const isPlain = b => b.length > 16 && b[0] === 0 && b[1] === 0 && b[2] === 0 && 
 const magic = b => b.length > 4 ? b.slice(0, 4).toString('latin1') : '';
 
 // Copy a save folder to a temp folder that keeps the SAME folder name, then decrypt it there.
-async function workCopy(dir, pfd) {
+async function workCopy(dir, pfd, name) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'mcla-'));
   const sub = path.join(parent, path.basename(dir));
   copyDir(dir, sub);
-  const r = await run(pfd, '-d', sub);
+  const r = await run(pfd, ['-g', gameId(dir), '-d', sub, name]);
   return { parent, sub, log: r.out };
 }
 
@@ -91,7 +103,7 @@ ipcMain.handle('save:open', async (e) => {
   const pfd = getPfd();
   send(15, 'Copying save to a work folder');
   send(30, 'Decrypting with pfdtool');
-  const w = await workCopy(dir, pfd);
+  const w = await workCopy(dir, pfd, path.basename(file));
   const wf = path.join(w.sub, path.basename(file));
   const dec = fs.existsSync(wf) ? fs.readFileSync(wf) : Buffer.alloc(0);
   if (!isPlain(dec)) return { error: 'Decrypt did not work. pfdtool said: ' + (w.log || 'nothing').slice(0, 400), log: w.log };
@@ -119,15 +131,21 @@ ipcMain.handle('save:write', async (e, data) => {
     const backup = dir + '_BACKUP_' + stamp;
     copyDir(dir, backup);
     send(15, 'Preparing a work copy and decrypting it');
-    const w = await workCopy(dir, pfd);
+    const gid = gameId(dir);
+    const base = await run(pfd, ['-g', gid, '-c', dir]);
+    const w = await workCopy(dir, pfd, name);
     send(40, 'Writing your edits');
     fs.writeFileSync(path.join(w.sub, name), bytes);
     send(50, 'Encrypting with pfdtool');
-    const enc = await run(pfd, '-e', w.sub);
+    const enc = await run(pfd, ['-g', gid, '-e', w.sub, name]);
     const encBytes = fs.readFileSync(path.join(w.sub, name));
     if (isPlain(encBytes)) return { error: 'Encrypt did not run. Your save folder was NOT changed. pfdtool said: ' + enc.out.slice(0, 400), log: enc.out };
-    send(70, 'Checking the encrypted result (decrypting a copy)');
-    const chk = await workCopy(w.sub, pfd);
+    send(62, 'Verifying the signatures (pfdtool check)');
+    const res = await run(pfd, ['-g', gid, '-c', w.sub]);
+    if (fails(res.out) > fails(base.out))
+      return { error: 'Signature check failed after encrypting. Your save folder was NOT changed.', log: 'BEFORE:\n' + base.out + '\nAFTER:\n' + res.out };
+    send(72, 'Checking the encrypted result (decrypting a copy)');
+    const chk = await workCopy(w.sub, pfd, name);
     const back = fs.readFileSync(path.join(chk.sub, name));
     const n = Math.min(back.length, bytes.length);
     if (n < 400000 || Buffer.compare(back.subarray(0, n), bytes.subarray(0, n)) !== 0)
@@ -135,7 +153,7 @@ ipcMain.handle('save:write', async (e, data) => {
     send(90, 'Writing the encrypted save into your save folder');
     copyDir(w.sub, dir);
     send(100, 'Saved and encrypted');
-    return { ok: true, backup, log: enc.out };
+    return { ok: true, backup, log: 'Game code: ' + gid + '\n' + enc.out + '\n' + res.out };
   } catch (err) {
     return { error: 'Save failed: ' + err.message };
   }
