@@ -15,7 +15,15 @@
   "build": {
     "appId": "com.mclamodtool.app",
     "productName": "MCLA ModTool 2",
-    "files": ["main.js", "preload.js", "index.html"],
-    "win": { "target": "portable", "artifactName": "MCLA_ModTool_2.exe" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "embedded.js"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "MCLA_ModTool_2.exe"
+    }
   }
 }

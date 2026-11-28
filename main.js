@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const embedded = require('./embedded.js');
 
 let sess = null; // { kind: 'ps3' | 'raw' | 'xbox', file, dir, pfd }
 
@@ -18,6 +19,20 @@ function findPfd() {
     if (['pfdtool.exe', 'games.conf', 'global.conf'].every(f => fs.existsSync(path.join(d, f)))) return d;
   }
   return null;
+}
+
+// Use a pfdtool folder if one exists, otherwise unpack the embedded copy.
+function getPfd() {
+  const found = findPfd();
+  if (found) return found;
+  const dir = path.join(app.getPath('userData'), 'pfdtool');
+  fs.mkdirSync(dir, { recursive: true });
+  const files = { 'pfdtool.exe': embedded.exe, 'games.conf': embedded.games, 'global.conf': embedded.global };
+  for (const [name, b64] of Object.entries(files)) {
+    const buf = Buffer.from(b64, 'base64'), p = path.join(dir, name);
+    if (!fs.existsSync(p) || fs.statSync(p).size !== buf.length) fs.writeFileSync(p, buf);
+  }
+  return dir;
 }
 
 function run(pfd, flag, target) {
@@ -73,8 +88,7 @@ ipcMain.handle('save:open', async (e) => {
   // Encrypted PS3 save
   if (!fs.existsSync(path.join(dir, 'PARAM.PFD')) || !fs.existsSync(path.join(dir, 'PARAM.SFO')))
     return { error: 'This file looks encrypted, but PARAM.PFD and PARAM.SFO are not in the same folder. Keep the whole save folder together.' };
-  const pfd = findPfd();
-  if (!pfd) return { error: 'pfdtool was not found inside the app. The build is missing the vendor/pfdtool files.' };
+  const pfd = getPfd();
   send(15, 'Copying save to a work folder');
   send(30, 'Decrypting with pfdtool');
   const w = await workCopy(dir, pfd);
