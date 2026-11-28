@@ -22,14 +22,21 @@ input[type=number]{width:84px}input[type=color]{padding:0;width:40px;height:32px
 <h1>MCLA ModTool 2</h1>
 <div class="mu">Customization editor for Midnight Club: Los Angeles saves. It runs in your browser and nothing is uploaded.</div>
 
-<div class="card"><h2>1 · Open your save</h2>
+<div class="card" id="dcard" hidden><h2>Open / Save</h2>
+<div class="row"><button id="dopen">Open save file</button><button id="dsave" disabled>Save changes</button></div>
+<progress id="dbar" max="100" value="0" style="width:100%;height:14px"></progress>
+<div id="dmsg" class="mu">Pick your RAGE.SAV. If it is encrypted, the tool decrypts it for you. When you press Save changes it encrypts it again, checks the result, and keeps a backup. You do not need to run anything else.</div>
+<details><summary class="mu">Details</summary><pre id="dlog" class="mu" style="white-space:pre-wrap"></pre></details></div>
+
+<div class="card" id="mcard" hidden><h2>R35 mod install</h2>
+<div class="row"><button id="minst">Install R35 mod into my game</button></div>
+<progress id="mbar" max="100" value="0" style="width:100%;height:14px"></progress>
+<div id="mmsg" class="mu">Pick the mod’s carchive_cache2.rpf, then your game folder. The tool finds the right spot, backs up any old copy, copies the file and checks it. Run this once, then swap cars in your save.</div></div>
+
+<div class="card" id="fcard"><h2>1 · Open your save</h2>
 <input type="file" id="f">
 <div class="mu" style="margin-top:6px"><b>PS3:</b> decrypt the save with the DECRYPT.bat kit first, then open the decrypted <b>RAGE.SAV</b> here. <b>Xbox 360:</b> open the <b>mc4.sav</b> package directly.</div>
 <div id="st" class="mu"></div></div>
-
-<div class="card" id="ps3c" hidden><h2>PS3 save (direct)</h2>
-<div class="row"><button id="ps3o">Open PS3 save folder</button><button class="g" id="ps3s" disabled>Save back to PS3 folder</button></div>
-<div id="ps3m" class="mu">Pick the folder that contains RAGE.SAV and PARAM.PFD. The tool decrypts it for you, and re-encrypts it when you save. A backup copy is made first.</div></div>
 
 <div id="ed" hidden>
 <div class="card"><h2>2 · Car</h2><div class="row"><select id="car"></select><button class="g" id="rv">Revert this car to how it loaded</button></div></div>
@@ -60,7 +67,7 @@ input[type=number]{width:84px}input[type=color]{padding:0;width:40px;height:32px
 <div class="row"><button class="g" id="spin">Spinner guess (rim model 0 + FF)</button><button class="g" id="orb">Orbiting tires (9F wheel mod)</button></div>
 <div class="mu">Both are community notes, not confirmed features. The orbit mod was reported only for the Impala with 28" rims.</div></div>
 
-<div class="card"><h2>6 · Save</h2>
+<div class="card" id="dlcard"><h2>6 · Save</h2>
 <div class="row"><button id="dl">Download modified save</button></div>
 <div id="note" class="mu"></div></div>
 </div>
@@ -91,17 +98,6 @@ $("f").onchange=async e=>{
     orig=new Uint8Array(payload);init()
   }catch(x){$("st").textContent="Could not read: "+x;$("st").className="w";$("ed").hidden=true}};
 function loadRaw(u8,name){buf=u8;stfs=null;fname=name;payload=new Uint8Array(u8);orig=new Uint8Array(payload);init()}
-if(window.mclaPS3){$("ps3c").hidden=false;
-  $("ps3o").onclick=async()=>{const m=$("ps3m");m.textContent="Working... this can take a few seconds.";m.className="mu";
-    try{const r=await mclaPS3.open();if(!r){m.textContent="Cancelled.";return}
-      if(r.error){m.textContent=r.error;m.className="w";return}
-      loadRaw(new Uint8Array(r.bytes),"RAGE.SAV");
-      if(!$("ed").hidden){m.textContent="Loaded: "+r.dir;m.className="ok";$("ps3s").disabled=false;$("note").textContent="Press “Save back to PS3 folder” in the PS3 box at the top when you are done."}
-      else{m.textContent="Decrypt failed or this is not an MCLA save. pfdtool said: "+(r.log||"nothing").slice(0,300);m.className="w"}
-    }catch(e){m.textContent="Error: "+e;m.className="w"}};
-  $("ps3s").onclick=async()=>{const m=$("ps3m");m.textContent="Encrypting and saving...";m.className="mu";
-    try{const r=await mclaPS3.save(payload);if(r.error){m.textContent=r.error;m.className="w";return}
-      m.textContent="Saved. Backup of the old save: "+r.backup+". Copy the save folder to your USB stick and import it on the PS3.";m.className="ok"}catch(e){m.textContent="Error: "+e;m.className="w"}}}
 function carName(i){let s="";for(let k=0;k<40;k++){const c=payload[B+R*i+k];if(!c||c===0xCD)break;s+=String.fromCharCode(c)}return s}
 function init(){
   const sel=$("car");sel.innerHTML="";let n=0;
@@ -171,8 +167,39 @@ $("rb").onclick=()=>{const b=RAINBOW.match(/../g).map(x=>parseInt(x,16));payload
 $("allfd").onclick=()=>{for(let k=0;k<NL;k++)dv().setUint32(eo(k)+32,0xFFFFFFFD);lights()};
 $("spin").onclick=()=>{const b=base();payload[b+94]=0x00;payload[b+95]=0xFF;payload[b+96]=0xFF;alert("Applied the codebook spinner guess. Download it and test in game.")};
 $("orb").onclick=()=>{const b=base();for(let i=0;i<13;i++)payload[b+63+i]=0x9F;alert("Applied. Download it and test in game.")};
-$("dl").onclick=()=>{let out;
+function buildOut(){let out;
   if(stfs){out=new Uint8Array(buf);for(let i=0;i<stfs.nb;i++){const n=Math.min(4096,stfs.size-i*4096);if(n>0)out.set(payload.subarray(i*4096,i*4096+n),blk(stfs.base,stfs.st+i))}}
-  else out=payload;
+  else out=payload;return out}
+$("dl").onclick=()=>{const out=buildOut();
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([out]));a.download=fname.replace(/(\.[^.]*)?$/,"_modded$1");a.click()};
+if(window.mclaPS3){
+  $("fcard").hidden=true;$("dlcard").hidden=true;$("dcard").hidden=false;
+  $("mcard").hidden=false;
+  const mm=(t,c)=>{$("mmsg").textContent=t;$("mmsg").className=c||"mu"};
+  mclaPS3.onModProgress(p=>{$("mbar").value=p.pct;mm(p.pct+"% · "+p.label)});
+  $("minst").onclick=async()=>{$("minst").disabled=true;$("mbar").value=0;mm("Starting...");
+    try{const r=await mclaPS3.installMod();
+      if(!r)mm("Cancelled.");else if(r.error)mm(r.error,"w");
+      else mm("Installed to "+r.dest+(r.backup?". Your old file was kept as "+r.backup:"")+". Now put the game and save on your PS3 as usual.","ok")
+    }catch(x){mm("Error: "+x,"w")}finally{$("minst").disabled=false}};
+  const msg=(t,c)=>{$("dmsg").textContent=t;$("dmsg").className=c||"mu"};
+  mclaPS3.onProgress(p=>{$("dbar").value=p.pct;msg(p.pct+"% · "+p.label)});
+  $("dopen").onclick=async()=>{$("dopen").disabled=$("dsave").disabled=true;$("dbar").value=0;msg("Starting...");
+    try{const r=await mclaPS3.open();
+      if(!r){msg("Cancelled.");return}
+      if(r.error){$("dlog").textContent=r.log||"";msg(r.error,"w");return}
+      const u=new Uint8Array(r.bytes);
+      if(r.kind==="xbox"){buf=u;fname="mc4.sav";stfs=parseSTFS(buf);payload=stfs.out;orig=new Uint8Array(payload);init()}
+      else loadRaw(u,"RAGE.SAV");
+      $("dlog").textContent=r.log||"";
+      if($("ed").hidden){msg("This file opened but no cars were found. It may not be an MCLA save.","w");return}
+      $("dsave").disabled=false;
+      msg(({ps3:"Decrypted and loaded. ",raw:"Loaded (not encrypted). ",xbox:"Xbox package loaded. "})[r.kind]+"Edit what you want, then press Save changes.","ok")
+    }catch(x){msg("Error: "+x,"w")}finally{$("dopen").disabled=false}};
+  $("dsave").onclick=async()=>{$("dopen").disabled=$("dsave").disabled=true;$("dbar").value=0;msg("Starting...");
+    try{const r=await mclaPS3.save(buildOut());
+      $("dlog").textContent=r.log||"";
+      if(r.error)msg(r.error,"w");
+      else msg("Saved. A backup of your old save was kept here: "+r.backup+". Copy the save folder to your USB stick and import it on the PS3.","ok")
+    }catch(x){msg("Error: "+x,"w")}finally{$("dopen").disabled=false;$("dsave").disabled=false}}}
 </script></main></body></html>
